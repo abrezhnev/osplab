@@ -1,0 +1,78 @@
+---
+- hosts: undercloud
+  remote_user: root
+  vars:
+    undercloud_hostname: undercloud.ctlplane.example.com
+    use_rhsm: false
+
+  tasks:
+    - name: Create the stack user
+      user:
+        name: stack
+        shell: /bin/bash
+
+    - name: Add the stack user to sudoers
+      copy:
+        dest: "/etc/sudoers.d/stack"
+        content: "stack ALL=(ALL) NOPASSWD: ALL"
+        mode: 0440
+        owner: root
+        group: root
+
+    - name: Deploy ssh key
+      authorized_key:
+        user: stack
+        key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+        state: present
+
+    - name: Copy the key pair to the stack user
+      copy:
+        src: "~/.ssh/{{ item }}"
+        dest: "/home/stack/.ssh/{{ item }}"
+        owner: stack
+        group: stack
+        mode: 0400
+      with_items:
+        - id_rsa
+        - id_rsa.pub
+
+    - name: Set hostname
+      hostname:
+        name: "{{ undercloud_hostname }}"
+
+    - name: enable RHEL 8 EUS repositories for undercloud
+      yum_repository:
+        name: "{{ item }}"
+        description: "{{ item }}"
+        baseurl: "http://classroom.example.com/rhel-8.1-repos/{{ item }}/"
+        gpgcheck: no
+      with_items:
+        - rhel-8-for-x86_64-appstream-eus-rpms
+        - rhel-8-for-x86_64-baseos-eus-rpms
+        - rhel-8-for-x86_64-highavailability-eus-rpms
+      when: not use_rhsm|bool
+
+    - name: enable repositories for undercloud
+      yum_repository:
+        name: "{{ item }}"
+        description: "{{ item }}"
+        baseurl: "http://classroom.example.com/rhel-8-repos/{{ item }}/"
+        gpgcheck: no
+      with_items:
+        - openstack-16-for-rhel-8-x86_64-rpms
+        - fast-datapath-for-rhel-8-x86_64-rpms
+        - ansible-2.8-for-rhel-8-x86_64-rpms
+        - rhceph-4-tools-for-rhel-8-x86_64-rpms
+      when: not use_rhsm|bool
+
+    - name: Ensure system is up to date
+      yum:
+        name: '*'
+        state: latest  # noqa 403
+      register: packages_updated
+      become: true
+
+    - name: Reboot if necessary
+      reboot:
+      become: true
+      when: packages_updated is changed
