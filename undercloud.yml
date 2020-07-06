@@ -34,45 +34,30 @@
       become: true
       when: install_ceph_ansible|bool
 
-    - name: Copy the sample undercloud config file
+    - name: Copy the undercloud config file
       copy:
-        src: /usr/share/python-tripleoclient/undercloud.conf.sample
-        dest: "/home/stack/undercloud.conf.sample"
-        remote_src: true
+        src: "{{ item }}"
+        dest: "{{ ansible_env.HOME }}/{{ item }}"
         owner: stack
         group: stack
         mode: 0644
-      become: true
+      with_items:
+        - undercloud.conf
+        - containers-prepare-parameter.yaml
 
-    - name: Configure undercloud.conf
-      config_template:
-        src: "{{ ansible_env.HOME }}/undercloud.conf.sample"
-        dest: "{{ ansible_env.HOME }}/undercloud.conf"
-        remote_src: true
-        render_template: false
-        config_type: ini
-        config_overrides:
-          'DEFAULT':
-            undercloud_debug: false
-            local_ip: 192.168.10.2/24
-            undercloud_public_host: 10.1.0.3
-            undercloud_admin_host: 192.168.10.3
-            local_interface: eth0
-            overcloud_domain_name: example.com
-            undercloud_nameservers: 10.1.0.1
-            undercloud_update_packages: false
-            enable_ui: false
-            enable_tempest: false
-            enabled_hardware_types: ipmi
-            generate_service_certificate: false
-            clean_nodes: false
-          'ctlplane-subnet':
-            cidr: 192.168.10.0/24
-            dhcp_start: 192.168.10.64
-            dhcp_end: 192.168.10.127
-            inspection_iprange: 192.168.10.128,192.168.10.138
-            gateway: 192.168.10.1
-            masquerade: false
+    - name: Trust to the classroom CA
+      become: true
+      block:
+        - name: Fetch the classroom CA certificate
+          get_url:
+            url: http://classroom.example.com/ca.crt
+            dest: /etc/pki/ca-trust/source/anchors/classroom.example.com.crt
+            owner: root
+            group: root
+            mode: '0644'
+
+        - name: Update CA trust
+          shell: /bin/update-ca-trust
 
     - name: Install undercloud
       include_role:
